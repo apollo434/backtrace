@@ -7,6 +7,8 @@
 #include <pthread.h>
 #include <execinfo.h>
 #include <string.h>
+#include <sys/time.h>
+#include <signal.h>
 
 #include "list_head.h"
 
@@ -63,6 +65,9 @@ static void* (*real_malloc)(size_t size);
 static void* (*real_calloc)(size_t nmemb, size_t size);
 static void* (*real_realloc)(void *ptr, size_t size);
 static void  (*real_free)(void *ptr);
+
+extern void init_sigaction(void);
+extern void init_time(void);
 
 __attribute__((constructor)) static void init(void)
 {
@@ -248,5 +253,23 @@ __attribute__((destructor)) static void fini(void)
 out:
 	pthread_mutex_unlock(&list_mutex);
 	return;
+}
+
+
+void init_sigaction(void)
+{
+    struct sigaction tact;
+    tact.sa_handler = print_list;
+    tact.sa_flags = 0;
+    sigemptyset(&tact.sa_mask);
+    sigaction(SIGALRM, &tact, NULL);
+}
+void init_time(void)
+{
+    struct itimerval value;
+    value.it_value.tv_sec = 2;
+    value.it_value.tv_usec = 0;
+    value.it_interval = value.it_value;
+    setitimer(ITIMER_REAL, &value, NULL);
 }
 
