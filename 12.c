@@ -12,7 +12,13 @@ static int * fun()
 static void *thread(void)
 {
 	int *h = NULL;
-	h = fun();
+	int i;
+
+//	for(i=0;i<2;i++)
+//	{
+		h = fun();
+//		sleep(3);
+//	}
 	pthread_exit(NULL);
 }
 

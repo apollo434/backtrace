@@ -1,5 +1,6 @@
 #define _GNU_SOURCE 
 
+#if 0
 #include <dlfcn.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -9,6 +10,23 @@
 #include <string.h>
 #include <sys/time.h>
 #include <signal.h>
+
+#else
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <execinfo.h>
+#include <string.h>
+#include <sys/time.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "list_head.h"
 
@@ -52,6 +70,8 @@ pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
 __thread int malloc_status;
 int initializing = 0; 
 
+int fd1;
+
 list_t malloc_header;
 
 char tmpbuf[1024];
@@ -78,13 +98,17 @@ __attribute__((constructor)) static void init(void)
 
 		INIT_LIST_HEAD(&malloc_header);
 		malloc_status = FALSE;
-		
+
+		init_posix_timer();
+
+		fd1 = open("/tmp/memory.log",O_CREAT|O_WRONLY|O_SYNC,0777);
+
 		real_malloc     = dlsym(RTLD_NEXT, "malloc");
-		real_calloc	= dlsym(RTLD_NEXT, "calloc");
-		real_realloc    = dlsym(RTLD_NEXT, "realloc");
-		real_free       = dlsym(RTLD_NEXT, "free");
+	//	real_calloc	= dlsym(RTLD_NEXT, "calloc");
+	//	real_realloc    = dlsym(RTLD_NEXT, "realloc");
+	//	real_free       = dlsym(RTLD_NEXT, "free");
 		
-		if (!real_malloc || !real_calloc || !real_realloc || !real_free) {
+		if (!real_malloc /*|| !real_calloc || !real_realloc || !real_free*/) {
 			exit(1);
 		}
 		
@@ -122,6 +146,7 @@ void* malloc(size_t size)
 	int recursive_flag;
 
 	if(likely(real_malloc)) {
+	
 		hdr = real_malloc(sizeof(struct malloc_hdr) + size);
 		if (hdr == NULL)
 			return NULL;
@@ -140,7 +165,7 @@ void* malloc(size_t size)
 
 			malloc_status = FALSE;
 		}
-		p = hdr->buf;
+		p = hdr->buf;	  
 	} else {
 		init();
 		p = temp_malloc(size);
@@ -213,16 +238,24 @@ void free(void *ptr)
 void print_list(void)
 {
 	struct malloc_hdr *pos;
-	int fd = 0;
+//	int fd = 0;
 
-	fd = open("/var/log/glusterfs/memory.log");
-
+#if 0
 	pthread_mutex_lock(&list_mutex);
 	list_for_each_entry(pos, &malloc_header, malloc_list)
-		__backtrace_symbols_fd(pos->frame, pos->frame_cnt, fd);
+		__backtrace_symbols_fd(pos->frame, pos->frame_cnt, fd1);
 	pthread_mutex_unlock(&list_mutex);
-	
-	close(fd);
+#endif
+          while(!list_empty(&malloc_header)) {
+                  pos = list_first_entry(&malloc_header, struct malloc_hdr, malloc_list);
+                  list_del(&pos->malloc_list);
+                  pthread_mutex_unlock(&list_mutex);
+
+                  __backtrace_symbols_fd(pos->frame, pos->frame_cnt, fd1); 
+                              
+                  pthread_mutex_lock(&list_mutex);
+          }
+
 	return;
 }
 
@@ -238,20 +271,13 @@ __attribute__((destructor)) static void fini(void)
 		list_del(&pos->malloc_list);
 		pthread_mutex_unlock(&list_mutex);
 
-		//cnt = snprintf(str, 32, "malloc addr %p, len %d\n", pos->buf, pos->len);
-		//if (cnt < 0)
-		//	goto out;
-		//write(stdout, str, cnt);
 		__backtrace_symbols_fd(pos->frame, pos->frame_cnt, 1);
-		//write(1, '\n', 1);
-
-		//if(likely(real_free))
-		//	real_free(pos);
 			
 		pthread_mutex_lock(&list_mutex);
 	}
 out:
 	pthread_mutex_unlock(&list_mutex);
+	close(fd1);
 	return;
 }
 
@@ -271,5 +297,47 @@ void init_time(void)
     value.it_value.tv_usec = 0;
     value.it_interval = value.it_value;
     setitimer(ITIMER_REAL, &value, NULL);
+}
+#define CLOCKID    CLOCK_MONOTONIC
+typedef  void (*pthHandler)(void);
+
+int timer_thread(timer_t *pTimerid,struct itimerspec its,pthHandler handler)
+{
+    struct sigevent sev;
+    int ret=0;
+
+    memset(&sev,0,sizeof(sev));
+    sev.sigev_notify = SIGEV_THREAD;
+    sev.sigev_notify_function=handler;
+    sev.sigev_value.sival_ptr = pTimerid;
+
+    //sev.sigev_value.sival_int=timerid;
+    if (timer_create(CLOCKID, &sev, pTimerid) == -1) 
+    {   
+        ret=-1;
+    }   
+ 
+    if (timer_settime(*pTimerid, 0, &its, NULL) == -1) 
+    {   
+        ret=-1;
+    }   
+ 
+    return ret;
+ 
+}
+
+void init_posix_timer(void)
+{
+        timer_t timerid1;
+        struct  itimerspec ts1;
+
+        ts1.it_value.tv_sec =  4;  
+        ts1.it_value.tv_nsec = 0;
+        ts1.it_interval.tv_sec = 2;
+        ts1.it_interval.tv_nsec = 0;
+
+        timer_thread(&timerid1,ts1,print_list); 
+    
+        return;
 }
 
