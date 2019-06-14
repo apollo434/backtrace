@@ -14,11 +14,11 @@ static void *thread(void)
 	int *h = NULL;
 	int i;
 
-//	for(i=0;i<2;i++)
-//	{
+	for(i=0;i<2;i++)
+	{
 		h = fun();
-//		sleep(3);
-//	}
+		sleep(3);
+	}
 	pthread_exit(NULL);
 }
 

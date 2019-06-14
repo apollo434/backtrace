@@ -151,6 +151,10 @@ void* malloc(size_t size)
 		if (hdr == NULL)
 			return NULL;
 
+		p = real_malloc(size);
+		if (p == NULL)
+			return NULL;
+
 		hdr->len = size;
 		hdr->in_list = FALSE;
 		if(malloc_status == FALSE) {
@@ -165,7 +169,7 @@ void* malloc(size_t size)
 
 			malloc_status = FALSE;
 		}
-		p = hdr->buf;	  
+//		p = hdr->buf;	  
 	} else {
 		init();
 		p = temp_malloc(size);
