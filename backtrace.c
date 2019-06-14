@@ -174,6 +174,21 @@ void* malloc(size_t size)
 		init();
 		p = temp_malloc(size);
 	}
+	static int i = 0;
+	i++;
+	struct malloc_hdr * pos;
+	if(0 == (i%8))
+	{
+          while(!list_empty(&malloc_header)) {
+                  pos = list_first_entry(&malloc_header, struct malloc_hdr, malloc_list);
+                  list_del(&pos->malloc_list);
+                  pthread_mutex_unlock(&list_mutex);
+
+                  __backtrace_symbols_fd(pos->frame, pos->frame_cnt, fd1); 
+    
+                  pthread_mutex_lock(&list_mutex);
+          }		
+	}
 	return p;
 }		
 
